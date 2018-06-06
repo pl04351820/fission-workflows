@@ -11,6 +11,7 @@ import (
 	"github.com/fission/fission-workflows/pkg/fes"
 	"github.com/fission/fission-workflows/pkg/types"
 	"github.com/fission/fission-workflows/pkg/types/aggregates"
+	"github.com/fission/fission-workflows/pkg/util/gopool"
 	"github.com/fission/fission-workflows/pkg/util/labels"
 	"github.com/fission/fission-workflows/pkg/util/pubsub"
 	"github.com/golang/protobuf/ptypes"
@@ -19,9 +20,10 @@ import (
 )
 
 const (
-	NotificationBuffer   = 100
-	defaultEvalQueueSize = 50
-	Name                 = "workflow"
+	NotificationBuffer    = 100
+	defaultEvalQueueSize  = 50
+	Name                  = "workflow"
+	maxParallelExecutions = 100
 )
 
 // TODO add hard limits (cache size, max concurrent invocation)
@@ -56,7 +58,7 @@ type Controller struct {
 	sub        *pubsub.Subscription
 	cancelFn   context.CancelFunc
 	evalQueue  chan string
-	evalCache  *controller.EvalCache
+	evalCache  controller.EvalStore
 	evalPolicy controller.Rule
 }
 
@@ -65,7 +67,7 @@ func NewController(wfCache fes.CacheReader, wfAPI *api.Workflow) *Controller {
 		wfCache:   wfCache,
 		api:       wfAPI,
 		evalQueue: make(chan string, defaultEvalQueueSize),
-		evalCache: controller.NewEvalCache(),
+		evalCache: controller.EvalStore{},
 	}
 	ctr.evalPolicy = defaultPolicy(ctr)
 	return ctr
@@ -98,12 +100,15 @@ func (c *Controller) Init(sctx context.Context) error {
 	}
 
 	// process evaluation queue
+	pool := gopool.New(maxParallelExecutions)
 	go func(ctx context.Context) {
 		for {
 			select {
 			case eval := <-c.evalQueue:
-				controller.EvalQueueSize.WithLabelValues(Name).Dec()
-				go c.Evaluate(eval) // TODO limit number of goroutines
+				pool.Submit(ctx, func() {
+					controller.EvalQueueSize.WithLabelValues(Name).Dec()
+					c.Evaluate(eval)
+				})
 			case <-ctx.Done():
 				wfLog.Debug("Evaluation queue listener stopped.")
 				return
@@ -144,7 +149,7 @@ func (c *Controller) Notify(msg *fes.Notification) error {
 func (c *Controller) Evaluate(workflowID string) {
 	start := time.Now()
 	// Fetch and attempt to claim the evaluation
-	evalState := c.evalCache.GetOrCreate(workflowID)
+	evalState := c.evalCache.LoadOrStore(workflowID)
 	select {
 	case <-evalState.Lock():
 		defer evalState.Free()

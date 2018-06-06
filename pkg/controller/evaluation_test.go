@@ -123,31 +123,31 @@ func TestEvalState_Logs(t *testing.T) {
 }
 
 func TestEvalCache_GetOrCreate(t *testing.T) {
-	ec := NewEvalCache()
+	ec := EvalStore{}
 	id := "foo"
-	es, ok := ec.Get(id)
+	es, ok := ec.Load(id)
 	assert.False(t, ok)
 	assert.Empty(t, es)
 
-	es = ec.GetOrCreate(id)
+	es = ec.LoadOrStore(id)
 	assert.Equal(t, id, es.ID())
 
-	es, ok = ec.Get(id)
+	es, ok = ec.Load(id)
 	assert.True(t, ok)
 	assert.Equal(t, id, es.ID())
 }
 
 func TestEvalCache_Invalidate(t *testing.T) {
-	ec := NewEvalCache()
+	ec := EvalStore{}
 	id := "completedId"
 
-	ec.Put(NewEvalState(id))
-	es, ok := ec.Get(id)
+	ec.Store(NewEvalState(id))
+	es, ok := ec.Load(id)
 	assert.True(t, ok)
 	assert.Equal(t, id, es.ID())
 
-	ec.Del(id)
-	es, ok = ec.Get(id)
+	ec.Delete(id)
+	es, ok = ec.Load(id)
 	assert.False(t, ok)
 	assert.Empty(t, es)
 }
@@ -171,6 +171,7 @@ func TestConcurrentEvalStateHeap(t *testing.T) {
 	h.Push(es2)
 	h.Push(es3)
 
+	assert.Equal(t, 3, h.Len())
 	assert.Equal(t, es3, h.Pop())
 	assert.Equal(t, es1, h.Pop())
 	assert.Equal(t, es2, h.Pop())
@@ -242,4 +243,36 @@ func TestConcurrentEvalStateHeap_updatePriority(t *testing.T) {
 	h.UpdatePriority(es2, 1)
 	assert.Equal(t, es2, h.Pop())
 	assert.Equal(t, es1, h.Pop())
+}
+
+func TestConcurrentEvalStateHeap_chan(t *testing.T) {
+	h := NewConcurrentEvalStateHeap(true)
+	defer h.Close()
+	es1 := NewEvalState("id1")
+	es2 := NewEvalState("id2")
+	es3 := NewEvalState("id3")
+	es1.Record(EvalRecord{
+		Timestamp: time.Now().Add(2 * time.Minute),
+	})
+	es2.Record(EvalRecord{
+		Timestamp: time.Now().Add(5 * time.Minute),
+	})
+	es3.Record(EvalRecord{
+		Timestamp: time.Now().Add(1 * time.Minute),
+	})
+	h.Push(es1)
+	h.Push(es2)
+	h.Push(es3)
+
+	c := h.Chan()
+	item := h.Front()
+	assert.Equal(t, es3.id, item.id)
+	assert.Equal(t, es3, <-c)
+	assert.Equal(t, es1, <-c)
+	assert.Equal(t, es2, <-c)
+	select {
+	case <-c:
+		assert.Fail(t, "unexpected item")
+	default:
+	}
 }
