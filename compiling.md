@@ -33,8 +33,8 @@ helm install --set "tag=latest" --namespace fission charts/fission-workflows
 ```
 
 ### CLI
-There is an experimental CLI available, called `wfcli`.
+There is an experimental CLI available, called `fission-workflows`.
 The intent is to integrate it into the Fission CLI, removing the need for the separate CLI.
 ```bash
-go install github.com/fission/fission-workflows/cmd/wfcli/
+go install github.com/fission/fission-workflows/cmd/fission-workflows/
 ```

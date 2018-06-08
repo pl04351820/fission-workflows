@@ -5,13 +5,12 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"runtime"
 	"strings"
 	"text/tabwriter"
 	"time"
 
 	"github.com/fission/fission-workflows/pkg/version"
-	"github.com/fission/fission/fission/plugins"
+	"github.com/fission/fission/fission/plugin"
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
 )
@@ -24,8 +23,8 @@ func main() {
 	app.Email = "erwin@platform9.com"
 	app.Version = version.Version
 	app.EnableBashCompletion = true
-	app.Usage = "Fission Workflows CLI"
-	app.Description = "CLI for Fission Workflows"
+	app.Usage = "Inspect, manage, and debug workflow executions"
+	app.Description = app.Usage
 	app.HideVersion = true
 	app.Flags = []cli.Flag{
 		cli.StringFlag{
@@ -41,11 +40,12 @@ func main() {
 		},
 		cli.BoolFlag{
 			Name:   "debug, d",
-			EnvVar: "WFCLI_DEBUG",
+			EnvVar: "WORKFLOWS_DEBUG",
 		},
 		cli.BoolFlag{
 			Hidden: true,
 			Name:   "plugin",
+			Usage:  "Show Fission plugin info",
 		},
 	}
 	app.Commands = []cli.Command{
@@ -60,15 +60,12 @@ func main() {
 	}
 	app.Action = func(ctx *cli.Context) error {
 		if ctx.Bool("plugin") {
-			bs, err := json.Marshal(plugins.Metadata{
+			bs, err := json.Marshal(plugin.Metadata{
 				Name:    "workflows",
 				Version: version.Version,
-				Url:     "http://github.com/fission/fission-workflows/releases/" + version.Version + "-" + runtime.GOOS,
-				Requires: map[string]string{
-					"fission": "*",
-				},
+				Url:     "http://github.com/fission/fission-workflows/releases/" + version.Version,
 				Aliases: []string{"wf"},
-				Usage:   "Inspect and manage workflow executions",
+				Usage:   ctx.App.Usage,
 			})
 			if err != nil {
 				panic(err)

@@ -9,5 +9,5 @@ __pycache__/
 revive.toml
 
 
-wfcli*
+fission-workflows*
 fission-workflows-bundle*
